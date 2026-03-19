@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile information including role and status.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth." },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["Buyer", "Institution", "Admin"] },
+        "status": { "type": "string", "enum": ["Active", "Suspended", "Pending"] },
+        "institutionName": { "type": "string" },
+        "phoneNumber": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "status"]
+    },
+    "AuctionListing": {
+      "title": "Auction Listing",
+      "description": "Details of an asset listed for auction.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "assetType": { "type": "string", "enum": ["Real Estate", "Vehicle", "Machinery", "Financial Asset", "Other"] },
+        "basePrice": { "type": "number" },
+        "reservePrice": { "type": "number" },
+        "currentBid": { "type": "number" },
+        "bidCount": { "type": "integer" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pending", "Active", "Closed", "Cancelled"] },
+        "location": {
+          "type": "object",
+          "properties": {
+            "address": { "type": "string" },
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
+        "institutionId": { "type": "string" },
+        "institutionName": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string" }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "assetType", "basePrice", "startTime", "endTime", "status", "institutionId"]
+    },
+    "Bid": {
+      "title": "Bid",
+      "description": "A bid placed on an auction.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "auctionId": { "type": "string" },
+        "bidderId": { "type": "string" },
+        "bidderName": { "type": "string" },
+        "amount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["auctionId", "bidderId", "amount", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System notification for a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["outbid", "ending_soon", "won", "new_listing"] },
+        "auctionId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "UserProfile", "description": "User profiles indexed by UID." },
+    "/auctions/{auctionId}": { "schema": "AuctionListing", "description": "Auction listings." },
+    "/auctions/{auctionId}/bids/{bidId}": { "schema": "Bid", "description": "Bids for a specific auction." },
+    "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." }
+  }
+}

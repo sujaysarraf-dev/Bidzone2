@@ -1,0 +1,5 @@
+{
+  "name": "Bidzone",
+  "description": "Intelligent Financial Asset Auction Aggregation Platform for Institutions and Customers. Consolidates auctions from various financial institutions with geolocation discovery and AI-powered insights.",
+  "requestFramePermissions": ["geolocation"]
+}

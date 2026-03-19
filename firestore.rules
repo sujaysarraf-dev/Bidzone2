@@ -1,0 +1,173 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - email: string (required, format: email)
+    //   - displayName: string
+    //   - role: string (enum: Buyer, Institution, Admin)
+    //   - status: string (enum: Active, Suspended, Pending)
+    //   - institutionName: string (optional)
+    //   - phoneNumber: string (optional)
+    //   - photoURL: string (optional)
+    //   - createdAt: string (format: date-time)
+    //
+    // Collection: auctions
+    // Document ID: {auctionId}
+    // Fields:
+    //   - id: string
+    //   - title: string (required)
+    //   - description: string
+    //   - assetType: string (enum: Real Estate, Vehicle, Machinery, Financial Asset, Other)
+    //   - basePrice: number (required)
+    //   - reservePrice: number
+    //   - currentBid: number
+    //   - bidCount: integer
+    //   - startTime: string (format: date-time)
+    //   - endTime: string (format: date-time)
+    //   - status: string (enum: Pending, Active, Closed, Cancelled)
+    //   - location: map { address: string, latitude: number, longitude: number }
+    //   - institutionId: string (required)
+    //   - institutionName: string
+    //   - images: list of strings
+    //   - documents: list of maps { name: string, url: string }
+    //   - createdAt: string (format: date-time)
+    //
+    // Collection: auctions/{auctionId}/bids
+    // Document ID: {bidId}
+    // Fields:
+    //   - id: string
+    //   - auctionId: string (required)
+    //   - bidderId: string (required)
+    //   - bidderName: string
+    //   - amount: number (required)
+    //   - timestamp: string (format: date-time)
+    //
+    // Collection: notifications
+    // Document ID: {notificationId}
+    // Fields:
+    //   - id: string
+    //   - userId: string (required)
+    //   - title: string (required)
+    //   - message: string (required)
+    //   - type: string (enum: outbid, ending_soon, won, new_listing)
+    //   - auctionId: string
+    //   - read: boolean (required)
+    //   - createdAt: string (format: date-time)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Admin' ||
+        (request.auth.token.email == "developersujaynp@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+    
+    function isInstitution() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'Institution';
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // User Profiles
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.uid is string &&
+               data.email is string && isValidEmail(data.email) &&
+               data.role in ['Buyer', 'Institution', 'Admin'] &&
+               data.status in ['Active', 'Suspended', 'Pending'] &&
+               data.displayName is string && data.displayName.size() < 100;
+      }
+
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role != 'Admin';
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && 
+                    (isOwner(userId) ? request.resource.data.role == resource.data.role : true);
+      allow delete: if isAdmin();
+    }
+
+    // Auction Listings
+    match /auctions/{auctionId} {
+      function isValidAuction(data) {
+        return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+               data.assetType in ['Real Estate', 'Vehicle', 'Machinery', 'Financial Asset', 'Other'] &&
+               data.basePrice is number && data.basePrice >= 0 &&
+               isValidDateString(data.startTime) && isValidDateString(data.endTime) &&
+               data.status in ['Pending', 'Active', 'Closed', 'Cancelled'] &&
+               data.institutionId is string;
+      }
+
+      allow read: if true; // Publicly readable
+      allow create: if isInstitution() && isValidAuction(request.resource.data) && request.resource.data.institutionId == request.auth.uid;
+      allow update: if (isInstitution() && resource.data.institutionId == request.auth.uid && isValidAuction(request.resource.data)) || 
+                    isAdmin() ||
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentBid', 'bidCount']));
+      allow delete: if isAdmin() || (isInstitution() && resource.data.institutionId == request.auth.uid);
+
+      // Bids Subcollection
+      match /bids/{bidId} {
+        function isValidBid(data) {
+          return data.auctionId == auctionId &&
+                 data.bidderId == request.auth.uid &&
+                 data.amount is number && data.amount > 0 &&
+                 isValidDateString(data.timestamp);
+        }
+
+        allow read: if true;
+        allow create: if isAuthenticated() && isValidBid(request.resource.data) && 
+                      request.resource.data.amount > get(/databases/$(database)/documents/auctions/$(auctionId)).data.currentBid;
+      }
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      function isValidNotification(data) {
+        return data.userId is string &&
+               data.title is string && data.title.size() < 100 &&
+               data.message is string && data.message.size() < 500 &&
+               data.type in ['outbid', 'ending_soon', 'won', 'new_listing'] &&
+               data.read is bool &&
+               isValidDateString(data.createdAt);
+      }
+
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAdmin() || isInstitution(); // System or Institution can create notifications
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
